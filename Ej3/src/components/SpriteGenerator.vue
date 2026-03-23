@@ -130,26 +130,7 @@ const generarSprite = async () => {
     cargando.value = false;
   }
 };
-// ── Demo interno (fallback sin red) ────────────────────────────────────────
-const generarDemoInterno = () => {
-  const fw = 48, fh = 64;
-  const c = cols.value, r = rows.value;
-  const canvas = document.createElement('canvas');
-  canvas.width  = fw * c;
-  canvas.height = fh * r;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  for (let i = 0; i < numFrames.value; i++) {
-    const cx = (i % c) * fw, cy = Math.floor(i / c) * fh;
-    ctx.fillStyle = i % 2 === 0 ? '#e94560' : '#4cc9f0';
-    ctx.fillRect(cx + 8, cy + 8, fw - 16, fh - 16);
-  }
-  canvas.toBlob(blob => {
-    urlSprite.value = URL.createObjectURL(blob);
-    progreso.value  = 100;
-  });
-};
+
 
 // ── Animación ───────────────────────────────────────────────────────────────
 const toggleAnimacion = () => {

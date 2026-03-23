@@ -21,7 +21,6 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { signOut } from 'firebase/auth'
 import { autenticacion } from '../firebase'
@@ -29,9 +28,6 @@ import { useSesionStore } from '../stores/sesion'
 
 const sesion        = useSesionStore()
 const enrutador     = useRouter()
-const repositorios  = ref<any[]>([])
-const cargandoRepos = ref(false)
-const errorRepos    = ref('')
 
 async function cerrarSesion() {
   await signOut(autenticacion)

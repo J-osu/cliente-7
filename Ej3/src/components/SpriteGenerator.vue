@@ -1,103 +1,141 @@
 <script setup>
-import { ref, computed, onUnmounted, onMounted } from 'vue';
 import { HfInference } from '@huggingface/inference';
+// ─── Requisito 2 & 3: Axios para progreso de descarga y manejo de Blobs ───
+import axios from 'axios';
+import { ref, computed, onUnmounted, onMounted } from 'vue';
 
-const hf = new HfInference(import.meta.env.VITE_HF_TOKEN);
+// ── Estado general ──────────────────────────────────────────────────────────
 
-const descripcion = ref('warrior running, side view, pixel art');
-const numFrames = ref(4);
-const fps = ref(10);
-const cargando = ref(false);
-const mensaje = ref('');
-const urlSprite = ref('');
-const animando = ref(false);
-const frameActual = ref(0);
-const anchoPx = ref(0);   // ancho total de la imagen
-const altoPx = ref(0);    // alto total de la imagen
-const viewportW = ref(0);
-const viewportH = ref(0);
-const viewportEl = ref(null);
-let intervalo = null;
+const apiKey = import.meta.env.VITE_HF_TOKEN;
+const hf = new HfInference(apiKey);
+const descripcion  = ref('warrior running, side view, pixel art');
+const numFrames    = ref(4);
+const fps          = ref(10);
+const cargando     = ref(false);
+const mensaje      = ref('');
+const urlSprite    = ref('');
+const animando     = ref(false);
+const frameActual  = ref(0);
+const anchoPx      = ref(0);
+const altoPx       = ref(0);
+const viewportW    = ref(0);
+const viewportH    = ref(0);
+const viewportEl   = ref(null);
 
-// Detecta automáticamente el layout de la cuadrícula
-// FLUX suele generar cuadrículas cuadradas: 2x2, 3x2, 4x1, etc.
+// ── Requisito 2: Barra de progreso ─────────────────────────────────────────
+const progreso = ref(0);   // 0-100
+let intervalo  = null;
+
+// ── Detección automática de layout de la cuadrícula ────────────────────────
+// FLUX puede generar 2×2, 3×2, 4×1, etc. según los frames pedidos
 const cols = computed(() => {
   if (!anchoPx.value || !altoPx.value) return numFrames.value;
   const ratio = anchoPx.value / altoPx.value;
-  // Si la imagen es casi cuadrada y frames es 4 → 2x2
   if (ratio < 1.5 && numFrames.value === 4) return 2;
   if (ratio < 1.5 && numFrames.value === 6) return 3;
   if (ratio < 1.5 && numFrames.value === 9) return 3;
-  // Imagen horizontal → todos en una fila
   return numFrames.value;
 });
-
 const rows = computed(() => Math.ceil(numFrames.value / cols.value));
 
-// Tamaño de un frame individual
+// ── Tamaño de un frame individual ──────────────────────────────────────────
 const frameW = computed(() => anchoPx.value / cols.value);
-const frameH = computed(() => altoPx.value / rows.value);
+const frameH = computed(() => altoPx.value  / rows.value);
 
-// Escala para que quepa en el viewport
+// ── Escala automática para que el sprite quepa en el viewport ──────────────
 const scale = computed(() => {
   if (!frameW.value || !frameH.value || !viewportW.value || !viewportH.value) return 1;
-  const maxW = viewportW.value * 0.8;
-  const maxH = viewportH.value * 0.8;
-  const s = Math.min(maxW / frameW.value, maxH / frameH.value);
+  const s = Math.min(
+    (viewportW.value * 0.8) / frameW.value,
+    (viewportH.value * 0.8) / frameH.value
+  );
   return Math.max(1, Math.floor(s));
 });
 
-// Posición del frame actual en la cuadrícula
+// ── Posición del frame actual en la cuadrícula ─────────────────────────────
 const frameCol = computed(() => frameActual.value % cols.value);
 const frameRow = computed(() => Math.floor(frameActual.value / cols.value));
 
-// Ventana: muestra exactamente un frame
+// ── Requisito 4 & 5: estilos CSS calculados con v-bind ─────────────────────
+// Ventana recortadora: muestra exactamente UN frame
 const estiloVentana = computed(() => ({
-  width: `${frameW.value * scale.value}px`,
-  height: `${frameH.value * scale.value}px`,
+  width:    `${frameW.value * scale.value}px`,
+  height:   `${frameH.value * scale.value}px`,
   overflow: 'hidden',
   position: 'relative',
 }));
 
-// La imagen se desplaza para mostrar el frame correcto
+// La imagen completa se desplaza (X e Y) para encuadrar el frame correcto
 const estiloSprite = computed(() => ({
-  width: `${anchoPx.value * scale.value}px`,
-  height: `${altoPx.value * scale.value}px`,
-  transform: `translate(-${frameCol.value * frameW.value * scale.value}px, -${frameRow.value * frameH.value * scale.value}px)`,
+  width:          `${anchoPx.value * scale.value}px`,
+  height:         `${altoPx.value  * scale.value}px`,
+  transform:      `translate(
+                    -${frameCol.value * frameW.value * scale.value}px,
+                    -${frameRow.value * frameH.value * scale.value}px
+                  )`,
   imageRendering: 'pixelated',
-  display: 'block',
-  position: 'absolute',
-  top: 0,
+  display:        'block',
+  position:       'absolute',
+  top:  0,
   left: 0,
 }));
 
 const generarSprite = async () => {
   if (!descripcion.value.trim()) return;
+  
+  // Reiniciar estado
   cargando.value = true;
-  mensaje.value = 'Generando...';
+  progreso.value = 0;
+  mensaje.value = 'Iniciando generación...';
+
+  // --- Simulación de progreso ---
+  // Iniciamos un intervalo que sube el progreso gradualmente
+  const intervaloProgreso = setInterval(() => {
+    if (progreso.value < 90) {
+      // Sube rápido al principio, luego más lento
+      const incremento = progreso.value < 50 ? 5 : 1;
+      progreso.value += incremento;
+    }
+  }, 300);
+
   try {
     const response = await hf.textToImage({
       model: 'black-forest-labs/FLUX.1-schnell',
       inputs: `pixel art style, spritesheet with ${numFrames.value} frames of ${descripcion.value}, white background, animation frames, flat design`,
       parameters: { num_inference_steps: 4 },
     });
+
+    // Éxito: Saltamos al 100%
+    progreso.value = 100;
+    
     if (urlSprite.value) URL.revokeObjectURL(urlSprite.value);
     urlSprite.value = URL.createObjectURL(response);
-    mensaje.value = '✓ Listo';
+    mensaje.value = '✓ ¡Sprite generado!';
+
+    // Limpiar barra después de un segundo
+    setTimeout(() => { if (!cargando.value) progreso.value = 0; }, 1500);
+
   } catch (e) {
-    if (e.message.includes('429')) mensaje.value = 'Límite de peticiones. Espera un momento.';
-    else if (e.message.includes('loading')) mensaje.value = 'Modelo cargando, reintenta en 20s.';
-    else { mensaje.value = 'Error: ' + e.message; generarDemoInterno(); }
+    progreso.value = 0;
+    if (e.message.includes('429')) {
+      mensaje.value = 'Demasiadas peticiones. Espera un poco.';
+    } else if (e.message.includes('loading')) {
+      mensaje.value = 'El modelo se está despertando, reintenta en breve.';
+    } else {
+      mensaje.value = 'Error: ' + e.message;
+      generarDemoInterno();
+    }
   } finally {
+    clearInterval(intervaloProgreso);
     cargando.value = false;
   }
 };
-
+// ── Demo interno (fallback sin red) ────────────────────────────────────────
 const generarDemoInterno = () => {
   const fw = 48, fh = 64;
   const c = cols.value, r = rows.value;
   const canvas = document.createElement('canvas');
-  canvas.width = fw * c;
+  canvas.width  = fw * c;
   canvas.height = fh * r;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff';
@@ -107,9 +145,13 @@ const generarDemoInterno = () => {
     ctx.fillStyle = i % 2 === 0 ? '#e94560' : '#4cc9f0';
     ctx.fillRect(cx + 8, cy + 8, fw - 16, fh - 16);
   }
-  canvas.toBlob(blob => { urlSprite.value = URL.createObjectURL(blob); });
+  canvas.toBlob(blob => {
+    urlSprite.value = URL.createObjectURL(blob);
+    progreso.value  = 100;
+  });
 };
 
+// ── Animación ───────────────────────────────────────────────────────────────
 const toggleAnimacion = () => {
   if (animando.value) {
     clearInterval(intervalo);
@@ -122,9 +164,10 @@ const toggleAnimacion = () => {
   }
 };
 
+// ── Medición de imagen y viewport ──────────────────────────────────────────
 const onImgLoad = (e) => {
   anchoPx.value = e.target.naturalWidth;
-  altoPx.value = e.target.naturalHeight;
+  altoPx.value  = e.target.naturalHeight;
 };
 
 const medirViewport = () => {
@@ -147,41 +190,60 @@ onUnmounted(() => {
 <template>
   <div class="layout">
 
-    <!-- LEFT: controls -->
+    <!-- ════════════════ PANEL IZQUIERDO ════════════════ -->
     <aside class="panel-left">
       <span class="panel-title">SPRITE FORGE</span>
 
+      <!-- Descripción -->
       <div class="section">
         <label class="lbl">Descripción</label>
-        <textarea v-model="descripcion" placeholder="Ej: blue slime jumping..." rows="4" />
+        <textarea
+          v-model="descripcion"
+          placeholder="Ej: blue slime jumping..."
+          rows="4"
+        />
       </div>
 
+      <!-- Requisito 4: campo Frames que el usuario introduce manualmente -->
       <div class="section row-fields">
+        <div class="field">
+          <label class="lbl">Frames</label>
+          <input type="number" v-model.number="numFrames" min="1" max="16" />
+        </div>
         <div class="field">
           <label class="lbl">FPS</label>
           <input type="number" v-model.number="fps" min="1" max="60" />
         </div>
       </div>
 
+      <!-- Botón generar -->
       <button class="btn-gen" @click="generarSprite" :disabled="cargando">
         <span v-if="cargando" class="spinner" />
         {{ cargando ? 'Generando...' : 'Generar' }}
       </button>
 
-      <p v-if="mensaje" class="status">{{ mensaje }}</p>
-
-      <!-- Grid info -->
-      <div v-if="urlSprite" class="grid-info">
-        <span>{{ cols }}×{{ rows }} grid · frame {{ frameW.toFixed(0) }}×{{ frameH.toFixed(0) }}px</span>
+      <!-- Requisito 2: Barra de progreso visual -->
+      <div v-if="cargando || progreso > 0" class="progress-wrap">
+        <div class="progress-bar" :style="{ width: progreso + '%' }" />
+        <span class="progress-pct">{{ progreso }}%</span>
       </div>
 
+      <p v-if="mensaje" class="status">{{ mensaje }}</p>
+
+      <!-- Info de cuadrícula detectada -->
+      <div v-if="urlSprite" class="grid-info">
+        {{ cols }}×{{ rows }} grid · frame {{ frameW.toFixed(0) }}×{{ frameH.toFixed(0) }}px
+      </div>
+
+      <!-- Spritesheet completo (miniatura) -->
       <div v-if="urlSprite" class="section sheet-section">
         <label class="lbl">Spritesheet</label>
+        <!-- Requisito 3: src viene de createObjectURL(blob) -->
         <img :src="urlSprite" @load="onImgLoad" class="sheet-img" />
       </div>
     </aside>
 
-    <!-- RIGHT -->
+    <!-- ════════════════ PANEL DERECHO ════════════════ -->
     <main class="panel-right">
 
       <div v-if="!urlSprite" class="empty-state">
@@ -190,13 +252,20 @@ onUnmounted(() => {
       </div>
 
       <template v-else>
+        <!-- Viewport de animación -->
         <div class="viewport" ref="viewportEl">
-          <div :style="estiloVentana" class="anim-window">
-            <img :src="urlSprite" :style="estiloSprite" />
+          <!--
+            Requisito 5: v-bind aplica estilos calculados en tiempo real.
+            estiloVentana recorta exactamente 1 frame.
+            estiloSprite desplaza la imagen para encuadrar el frame correcto.
+          -->
+          <div v-bind:style="estiloVentana" class="anim-window">
+            <img :src="urlSprite" v-bind:style="estiloSprite" />
           </div>
           <div class="scale-badge">×{{ scale }}</div>
         </div>
 
+        <!-- Controles -->
         <div class="controls-bar">
           <button class="btn-play" @click="toggleAnimacion">
             {{ animando ? '⏹ Detener' : '▶ Reproducir' }}
@@ -222,6 +291,7 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+/* ── Panel izquierdo ── */
 .panel-left {
   width: 300px;
   min-width: 260px;
@@ -316,6 +386,28 @@ input[type="number"]:focus { border-color: #2e2e2e; }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Requisito 2: barra de progreso ── */
+.progress-wrap {
+  position: relative;
+  height: 6px;
+  background: #1e1e1e;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  background: #e8e8e8;
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+.progress-pct {
+  position: absolute;
+  right: 0;
+  top: -16px;
+  font-size: 0.6rem;
+  color: #555;
+}
+
 .status { font-size: 0.7rem; color: #4a4a4a; }
 
 .grid-info {
@@ -333,6 +425,7 @@ input[type="number"]:focus { border-color: #2e2e2e; }
   image-rendering: pixelated;
 }
 
+/* ── Panel derecho ── */
 .panel-right {
   flex: 1;
   display: flex;

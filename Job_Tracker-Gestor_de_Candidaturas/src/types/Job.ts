@@ -1,6 +1,8 @@
 export interface Job {
   id?: number;
-  empresa: string;
-  puesto: string;
-  estado: 'CV Enviado' | 'Entrevista Técnica' | 'Oferta' | 'Rechazado';
+  title: string;
+  company: string;
+  location: string;
+  description: string;
+  status: 'CV Enviado' | 'Entrevista Técnica' | 'Oferta' | 'Rechazado';
 }

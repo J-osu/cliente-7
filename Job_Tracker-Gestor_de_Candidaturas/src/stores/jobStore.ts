@@ -27,11 +27,11 @@ export const useJobStore = defineStore('jobStore', {
         console.error("Error al añadir:", error);
       }
     },
-    async updateStatus(id: number, nuevoEstado: Job['estado']) {
+    async updateStatus(id: number, nuevoEstado: Job['status']) {
       try {
-        await api.put(`/jobs/${id}`, { estado: nuevoEstado });
+        await api.put(`/jobs/${id}`, { status: nuevoEstado });
         const job = this.jobs.find(j => j.id === id);
-        if (job) job.estado = nuevoEstado;
+        if (job) job.status = nuevoEstado;
       } catch (error) {
         console.error("Error al actualizar:", error);
       }
